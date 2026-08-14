@@ -1,42 +1,35 @@
 import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
+from sentence_transformers import SentenceTransformer
 
+print("Загрузка модели rubert-tiny2...")
+embedder = SentenceTransformer('cointegrated/rubert-tiny2')
+
+# 1. Загружаем датасет
 df = pd.read_csv("test_dataset.csv")
 
-pipeline = Pipeline([
-    ('tfidf', TfidfVectorizer(
-        lowercase=True,
-        ngram_range=(1, 2),
-        min_df=1
-    )),
-    ('classifier', LogisticRegression(random_state=42, C=1.0))
-])
+df_train, df_test = train_test_split(
+    df,
+    test_size=0.5,
+    random_state=42,
+    stratify=df['category']
+)
 
-df = df.sample(frac=1, random_state=42)
+train_labels = df_train['category'].tolist()
+test_labels = df_test['category'].tolist()
 
-df_test = df.iloc[:len(df) // 2]
-df_validation = df.iloc[len(df) // 2:]
+print("Векторизация обучающих данных...")
+X_train = embedder.encode(df_train['text'].tolist())
 
-print("Обучение модели...")
-pipeline.fit(df_test['text'], df_test['category'])
-print("Обучение завершено\n")
+print("Векторизация тестовых данных...")
+X_test = embedder.encode(df_test['text'].tolist())
 
-predictions = pipeline.predict(df_test['text'])
-print("Отчет по качеству классификации:")
-print(classification_report(df_test['category'], predictions))
+print("Обучение классификатора...\n")
+clf = LogisticRegression(random_state=42, C=10.0, max_iter=1000)
+clf.fit(X_train, train_labels)
 
-print("-" * 40)
-print("Тестирование на новых заявках:\n")
-texts = df_validation['text']
-predictions = pipeline.predict(texts)
-probabilities = pipeline.predict_proba(texts)
-
-# 2. Итерируемся по текстам и уже готовым результатам с помощью zip
-for req, pred, probs in zip(texts, predictions, probabilities):
-    max_prob = max(probs) * 100
-
-    print(f"ТЗ: «{req}»")
-    print(f"Категория: {pred} (уверенность: {max_prob:.1f}%)\n")
+predictions = clf.predict(X_test)
+print("Отчет по качеству:")
+print(classification_report(test_labels, predictions))
